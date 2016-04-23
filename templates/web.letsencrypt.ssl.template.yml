@@ -1,5 +1,5 @@
 env:
-  LETSENCRYPT_DIR: "/shared/letsencrypt"
+  LE_WORKING_DIR: "/shared/letsencrypt"
 
 hooks:
   after_ssl:
@@ -10,10 +10,10 @@ hooks:
 
     - exec:
        cmd:
-         - cd /root && git clone https://github.com/Neilpang/le.git && cd /root/le && git reset --hard a7b7355dcf1f1b75fb581bf5d15cf26086d58c06
+         - cd /root && git clone https://github.com/Neilpang/le.git && cd /root/le && git reset --hard e4739512e6acd3a57fdc5274c493545b6322c0dc
          - touch /var/spool/cron/crontabs/root
-         - install -d -m 0755 -g root -o root $LETSENCRYPT_DIR
-         - cd /root/le && LE_WORKING_DIR="${LETSENCRYPT_DIR}" ./le.sh install
+         - install -d -m 0755 -g root -o root $LE_WORKING_DIR
+         - cd /root/le && ./acme.sh --install
 
     # Ideally, we want to name the file 'letsencrypt' but we can't until the following is fixed
     # https://github.com/Neilpang/acme.sh/issues/164
@@ -22,10 +22,16 @@ hooks:
        chmod: "+x"
        contents: |
           #!/bin/bash
-          LE_WORKING_DIR="$$ENV_LETSENCRYPT_DIR" $$ENV_LETSENCRYPT_DIR/le.sh issue no $$ENV_DISCOURSE_HOSTNAME no 4096
-          LE_WORKING_DIR="$$ENV_LETSENCRYPT_DIR" $$ENV_LETSENCRYPT_DIR/le.sh installcert $$ENV_DISCOURSE_HOSTNAME /shared/ssl/$$ENV_DISCOURSE_HOSTNAME.cer /shared/ssl/$$ENV_DISCOURSE_HOSTNAME.key /shared/ssl/$$ENV_DISCOURSE_HOSTNAME.cer "sv reload nginx"
+
+          domains=""
+          if [ -n "$LETSENCRYPT_DOMAINS" ]; then
+            domains="-d $(echo $LETSENCRYPT_DOMAINS | sed 's/,/ -d /g')"
+          fi
+
+          $$ENV_LE_WORKING_DIR/acme.sh --issue --standalone -d $$ENV_DISCOURSE_HOSTNAME $domains
+          $$ENV_LE_WORKING_DIR/acme.sh --installcert $$ENV_DISCOURSE_HOSTNAME --certpath /shared/ssl/$$ENV_DISCOURSE_HOSTNAME.cer --keypath /shared/ssl/$$ENV_DISCOURSE_HOSTNAME.key --capath /shared/ssl/$$ENV_DISCOURSE_HOSTNAME.cer --reloadcmd "sv reload nginx"
           # After the initial install, switch to Webroot plugin
-          LE_WORKING_DIR="$$ENV_LETSENCRYPT_DIR" $$ENV_LETSENCRYPT_DIR/le.sh _setopt $$ENV_LETSENCRYPT_DIR/$$ENV_DISCOURSE_HOSTNAME/$$ENV_DISCOURSE_HOSTNAME.conf "Le_Webroot" "=" "/var/www/discourse/public"
+          $$ENV_LE_WORKING_DIR/le.sh _setopt $$ENV_LE_WORKING_DIR/$$ENV_DISCOURSE_HOSTNAME/$$ENV_DISCOURSE_HOSTNAME.conf "Le_Webroot" "=" "/var/www/discourse/public"
 
     - replace:
        filename: "/etc/nginx/conf.d/discourse.conf"
